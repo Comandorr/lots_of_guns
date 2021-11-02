@@ -19,7 +19,7 @@ ground = Entity(model='plane', scale=(100, 1, 100), texture='bloody2.jpg', textu
                 shader=lit_with_shadows_shader)
 ec = Cam(rotation=(30, 0, 0), rotation_speed=0)
 camera.orthographic = True
-camera.fov = 100
+camera.fov = 15
 camera.clip_plane_near = False
 camera.clip_plane_far = False
 mouse.visible = False
@@ -36,9 +36,9 @@ sun = PointLight(parent=player, y=2, shadows=True, color=color.red)
 player.speed = 10
 player.hp = 100
 cursor = Entity(model='sphere', scale=.2, color=color.violet, y=.5, shader=lit_with_shadows_shader)
-enemies = []
-bar = HealthBar(bar_color=color.lime.tint(-.25), roundness=.5, value=player.hp, x=0 - .25, y=0.49)
-print(bar.position)
+bar = HealthBar(bar_color=color.lime.tint(-.25), roundness=.5, value=player.hp, x=0 - .25, y=0.49, visible=False)
+enemies = Text(text='ВЫ ПОБЕДИЛИ', origin=(0, 0), background=True, visible=False, x=-0.75, y=0.45, size=0.02)
+demons = []
 
 
 def player_hurt():
@@ -46,6 +46,7 @@ def player_hurt():
     if player.hp <= 0:
         global start
         start = False
+        player.gun.shooting.pause()
         Sequence(0.02, Func(change_fov, +0.1), Func(setattr, riptear, 'volume', 0.35), loop=True).start()
 
 
@@ -67,9 +68,6 @@ class Gun(Entity):
         self.sound.play()
         if self.parent == player:
             shake_cam()
-            camera.fov += randint(-1, 1)
-            camera.fov += randint(-1, 1)
-            camera.fov += randint(-1, 1)
         Bullet(self, position=self.world_position + self.right * 13)
 
 
@@ -96,15 +94,15 @@ class Bullet(Entity):
         self.position += self.forward * 5
         self.light.world_position = self.world_position
         if distance(self, player) > 15:
-            self.disable()
+            destroy(self, delay=1)
         hitinfo = self.intersects()
         if hitinfo.hit:
-            if self.color == color.red and hitinfo.entity.type in ['Shooter', 'Mother',
-                                                                   'Biter'] and hitinfo.entity.alive and self.enabled:
+            if self.color == color.red and hitinfo.entity.type in ['Shooter', 'Mother', 'Biter'] \
+                                       and hitinfo.entity.alive and self.enabled:
                 hitinfo.entity.hurt()
-                self.disable()
+                destroy(self, delay=1)
             if self.color == color.blue and hitinfo.entity == player and self.enabled:
-                self.disable()
+                destroy(self, delay=1)
                 player_hurt()
 
 
@@ -120,7 +118,7 @@ class Enemy(Entity):
         self.speed = speed
         self.hp = hp
         self.alive = alive
-        enemies.append(self)
+        demons.append(self)
 
     def rise(self):
         self.y = 0
@@ -134,7 +132,7 @@ class Enemy(Entity):
 
     def update(self):
         global start
-        if self.alive and start and distance(player, self) < 20:
+        if self.alive and start:
             self.look_at(player)
 
             hitinfo = self.intersects()
@@ -142,7 +140,7 @@ class Enemy(Entity):
                 player_hurt()
 
     def hurt(self):
-        self.blink(color.red, duration=.5)
+        self.blink(color.red, duration=1)
         self.hp -= 1
         if self.hp <= 0:
             self.die()
@@ -150,19 +148,19 @@ class Enemy(Entity):
     def die(self):
         if self.type == 'Shooter':
             self.gun.shooting.pause()
-        if self in enemies:
-            enemies.remove(self)
+        if self in demons:
+            demons.remove(self)
         self.alive = False
-        self.disable()
+        destroy(self, delay=1)
 
 
 class Biter(Enemy):
     def __init__(self, **kwargs):
-        super().__init__(name='demon1', speed=0.15, hp=10, **kwargs)
+        super().__init__(name='demon1', speed=0.2, hp=10, **kwargs)
 
     def update(self):
         global start
-        if self.alive and start and distance(player, self) < 20:
+        if self.alive and start:
             super().update()
             super().move()
             hitinfo = self.intersects()
@@ -180,7 +178,7 @@ class Shooter(Enemy):
 
     def update(self):
         global start
-        if self.alive and start and distance(player, self) < 20:
+        if self.alive and start:
             super().update()
             if distance(player, self) >= 10:
                 super().move()
@@ -205,11 +203,13 @@ class Mother(Enemy):
         x = self.x + randint(-5, 5)
         z = self.z + randint(-5, 5)
         self.portal.position = (x, 0.1, z)
-        c = choice(['Biter', 'Shooter'])
+        c = choice(['Biter', 'Shooter', 'Mother'])
         if c == 'Biter':
             new = Biter(position=(x, -2.5, z), alive=False)
         elif c == 'Shooter':
             new = Shooter(position=(x, -2.5, z), alive=False)
+        elif c == 'Mother':
+            new = Mother(position=(x, -2.5, z), alive=False)
 
         Sequence(Wait(randint(1, 5)), Func(new.rise), Wait(randint(1, 5)), Func(new.activate), Func(self.portal_off),
                  loop=False, paused=True).start()
@@ -218,12 +218,15 @@ class Mother(Enemy):
         global start
         if self.alive and start:
             super().update()
-            if (time.time() - self.last) > self.cooldown and len(enemies) < 10:
+            if (time.time() - self.last) > self.cooldown:
                 self.spawn()
                 self.last = time.time()
 
 
-
+wall_north = Entity(model='cube', texture='brick', position=(50, 0, 0), scale=(10, 1, 100))
+wall_south = Entity(model='cube', texture='brick', position=(-50, 0, 0), scale=(10, 1, 100))
+wall_west = Entity(model='cube', texture='brick', position=(0, 0, -50), scale=(100, 1, 10))
+wall_east = Entity(model='cube', texture='brick', position=(0, 0, 50), scale=(100, 1, 10))
 
 Mother(position=(0, 0, 25))
 Mother(position=(0, 0, -25))
@@ -240,7 +243,6 @@ Biter(position=(4, 0, -15), rotation_y=180)
 player.gun = gun1
 player.gun.parent = player
 player.gun.position += player.right * .25
-demons = []
 start = False
 
 
@@ -253,7 +255,8 @@ def update():
         cursor.x = player.x + mouse.position[0] * 10
         cursor.z = player.z + mouse.position[1] * 20
         player.look_at(cursor.position)
-        if len(enemies) == 0:
+        enemies.text = 'Врагов осталось: ' + str(len(demons))
+        if len(demons) == 0:
             Text(text='ВЫ ПОБЕДИЛИ', origin=(0, 0), background=True)
 
 
@@ -269,15 +272,20 @@ def input(key):
 def shake_cam():
     vec = (randint(-1, 1) * .15, randint(-1, 1) * .15, randint(-1, 1) * .15)
     camera.position += vec
+    #camera.fov += randint(-1, 1)
+    #camera.fov += randint(-1, 1)
+    #camera.fov += randint(-1, 1)
     invoke(Func(setattr, camera, 'position', camera.position - vec), delay=.1)
 
 
 def begin():
     global start
     start = True
+    bar.visible = True
+    enemies.visible = True
     if not riptear.playing:
         riptear.play()
-    camera.fov = 10
+    camera.fov = 15
 
 
 def change_fov(f):
@@ -295,6 +303,6 @@ def cutscene():
     Sequence(45, Func(begin)).start()
 
 
-# begin()
-cutscene()
+begin()
+#cutscene()
 app.run()
